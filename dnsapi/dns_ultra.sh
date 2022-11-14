@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/bin/bash
 
 #
 # ULTRA_USR="your_user_goes_here"
@@ -29,18 +29,18 @@ dns_ultra_add() {
     _err "invalid domain"
     return 1
   fi
-  _debug _domain_id "${_domain_id}"
-  _debug _sub_domain "${_sub_domain}"
-  _debug _domain "${_domain}"
+  _debug _zone "${_zone}"
+  _debug _record "${_record}"
+  
   _debug "Getting txt records"
-  _ultra_rest GET "zones/${_domain_id}/rrsets/TXT?q=value:${fulldomain}"
+  _ultra_rest GET "zones/${_zone}./rrsets/TXT/${_record}"
   if printf "%s" "$response" | grep \"totalCount\" >/dev/null; then
     _err "Error, it would appear that this record already exists. Please review existing TXT records for this domain."
     return 1
   fi
 
   _info "Adding record"
-  if _ultra_rest POST "zones/$_domain_id/rrsets/TXT/${_sub_domain}" '{"ttl":300,"rdata":["'"${txtvalue}"'"]}'; then
+  if _ultra_rest POST "zones/${_zone}./rrsets/TXT/${_record}" '{"ttl":300,"rdata":["'"${txtvalue}"'"]}'; then
     if _contains "$response" "Successful"; then
       _info "Added, OK"
       return 0
@@ -74,15 +74,14 @@ dns_ultra_rm() {
     _err "invalid domain"
     return 1
   fi
-  _debug _domain_id "${_domain_id}"
-  _debug _sub_domain "${_sub_domain}"
-  _debug _domain "${domain}"
+  _debug _zone "${_zone}"
+  _debug _record "${_record}"
 
   _debug "Getting TXT records"
-  _ultra_rest GET "zones/${_domain_id}/rrsets?q=kind:RECORDS+owner:${_sub_domain}"
+  _ultra_rest GET "zones/${_zone}./rrsets/TXT/${_record}"
 
   if ! printf "%s" "$response" | grep \"resultInfo\" >/dev/null; then
-    _err "There was an error in obtaining the resource records for ${_domain_id}"
+    _err "There was an error in obtaining the resource records for ${_zone}"
     return 1
   fi
 
@@ -91,7 +90,7 @@ dns_ultra_rm() {
   if [ "${count}" = "" ]; then
     _info "Text record is not present, will not delete anything."
   else
-    if ! _ultra_rest DELETE "zones/$_domain_id/rrsets/TXT/${_sub_domain}" '{"ttl":300,"rdata":["'"${txtvalue}"'"]}'; then
+    if ! _ultra_rest DELETE "zones/${_zone}./rrsets/TXT/${_record}" '{"ttl":300,"rdata":["'"${txtvalue}"'"]}'; then
       _err "Deleting the record did not succeed, please verify/check."
       return 1
     fi
@@ -100,42 +99,11 @@ dns_ultra_rm() {
 
 }
 
-####################  Private functions below ##################################
-#_acme-challenge.www.domain.com
-#returns
-# _sub_domain=_acme-challenge.www
-# _domain=domain.com
-# _domain_id=sdjkglgdfewsdfg
 _get_root() {
   domain=$1
-  i=2
-  p=1
-  while true; do
-    h=$(printf "%s" "$domain" | cut -d . -f $i-100)
-    _debug h "$h"
-    _debug response "$response"
-    if [ -z "$h" ]; then
-      #not valid
-      return 1
-    fi
-    if ! _ultra_rest GET "zones"; then
-      return 1
-    fi
-    if _contains "${response}" "${h}." >/dev/null; then
-      _domain_id=$(echo "$response" | _egrep_o "${h}" | head -1)
-      if [ "$_domain_id" ]; then
-        _sub_domain=$(printf "%s" "$domain" | cut -d . -f 1-$p)
-        _domain="${h}"
-        _debug sub_domain "${_sub_domain}"
-        _debug domain "${_domain}"
-        return 0
-      fi
-      return 1
-    fi
-    p=$i
-    i=$(_math "$i" + 1)
-  done
-  return 1
+  _zone=$(printf "%s" "$domain" | rev | cut -d . -f 1-2 | rev)
+  _record=${domain%".$_zone"}
+  return 0
 }
 
 _ultra_rest() {
